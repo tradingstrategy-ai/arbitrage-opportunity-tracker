@@ -1,19 +1,30 @@
 import logging
+import string
 import time
 import asyncio
 from asyncio import Task, create_task
 from collections import defaultdict
-from typing import Optional, Dict, List
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, Dict, List, Union, Callable
+
+import ccxt
+from rich.layout import Layout
 
 import ccxtpro
-from ccxtpro.base.exchange import Exchange
-
-
+from ccxtpro.base.exchange import Exchange as ProExchange
+from ccxt.base.exchange import Exchange as SyncExchange
+from ccxt.base.errors import RateLimitExceeded
+import typer
 from rich.live import Live
 from rich.table import Table
 from rich.console import Console
 
+from order_book_recorder.config import setup_exchanges
 from order_book_recorder.logger import setup_logging
+from order_book_recorder.logtable import refresh_log_messages, BufferedOutputHandler
+from order_book_recorder.pricetable import refresh_live
+from order_book_recorder.utils import to_async
+from order_book_recorder.watcher import Watcher
 
 DEPTHS = [100, 500, 1000, 3000, 5000]
 
@@ -21,122 +32,7 @@ DEPTHS = [100, 500, 1000, 3000, 5000]
 MARKETS = ["BTC/GBP", "ETH/GBP", "BTC/EUR", "ETH/EUR"]
 
 
-logger = logging.getLogger()
-
-
-class Watcher:
-
-    exchange_name: str
-    pair: str
-    exchange: Exchange
-    orderbook: dict
-    task: Optional[Task]
-    done: bool
-
-    def __init__(self, exchange_name: str, pair: str, exchange: Exchange):
-        self.exchange_name = exchange_name
-        self.pair = pair
-        self.exchange = exchange
-        self.task = None
-        self.done = False
-        self.task_count = 0
-
-        self.ask_price = None
-        self.bid_price = None
-
-    async def start_watching(self) -> "WatchedExchange":
-        self.orderbook = await self.exchange.watch_order_book(self.pair)
-        self.done = True
-        return self
-
-    def create_task(self):
-        self.done = False
-        self.task_count += 1
-        self.task = create_task(self.start_watching(), name=f"{self.exchange_name}: {self.pair} task #{self.task_count}")
-        return self.task
-
-    def is_task_pending(self):
-        if self.task is None:
-            return False
-
-        if self.done:
-            return False
-
-        return True
-
-    def is_done(self):
-        if self.task is None:
-            return False
-
-        if self.done:
-            return True
-
-        return False
-
-    def has_data(self):
-        return self.ask_price is not None
-
-    def refresh_depths(self):
-        """Update exchange market depths"""
-        #  BTC/GBP [42038.45, 0.083876] [42017.45, 0.03815124]
-        self.ask_price = self.orderbook["asks"][0][0]
-        self.bid_price = self.orderbook["bids"][0][0]
-
-    def get_spread(self):
-        assert self.has_data()
-        return (self.ask_price - self.bid_price) / self.bid_price
-
-
-async def setup_exchanges():
-    exchanges = {
-        "huobi": ccxtpro.huobi({'enableRateLimit': True}),
-        "kraken": ccxtpro.kraken({'enableRateLimit': True}),
-        # "gemini": ccxtpro.gemini({'enableRateLimit': True}),
-        "coinbase": ccxtpro.coinbasepro({'enableRateLimit': True}),
-        # "exmo": ccxt.exmo({'enableRateLimit': True}),
-    }
-
-    for name, x in exchanges.items():
-        logger.info("Loading markets for %s", name)
-        await x.load_markets()
-
-    return exchanges
-
-
-def refresh_live(exchanges: dict, markets: List[str], watchers_by_market: Dict[str, Dict[str, Watcher]]) -> Table:
-    """Make a Rich table that keeps displaying the exchange live prices"""
-    table = Table()
-    table.add_column("Exchange")
-    for market in markets:
-        table.add_column(market + " ask")
-        table.add_column("bid")
-        table.add_column("Spread BPS")
-
-    for exchange_name in exchanges.keys():
-        values = [exchange_name]
-        for market in markets:
-            watcher = watchers_by_market.get(market, {}).get(exchange_name, None)
-
-            if watcher is None:
-                values.append("N/A")
-                values.append("N/A")
-                values.append("N/A")
-                continue
-
-            if not watcher.has_data():
-                values.append("--")
-                values.append("--")
-                values.append("--")
-                continue
-
-            values.append(f"{watcher.ask_price}")
-            values.append(f"{watcher.bid_price}")
-            values.append(f"{watcher.get_spread() * 10000:,.2f}")
-
-        table.add_row(*values)
-
-    print(table)
-    return table
+logger: logging.Logger = None
 
 
 async def run_duty_cycle(watchers: List[Watcher]):
@@ -154,18 +50,23 @@ async def run_duty_cycle(watchers: List[Watcher]):
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
     for d in done:
-        result = await d
-        # logger.info("Done %s", d)
+        try:
+            result = await d
+        except Exception as e:
+            raise RuntimeError(f"Error while processing exchange {d.get_name()}") from e
 
     # Go through finished tasks
     for w in watchers:
         if w.is_done():
             # Refresh the price
-            # logger.info("Refreshing %s: %s", w.exchange_name, w.pair)
-            w.refresh_depths()
+            # logger.info(f"Refreshing {w.exchange_name}: {w.pair}")
+            try:
+                w.refresh_depths()
+            except Exception as e:
+                raise RuntimeError(f"Error while refreshing depth data for exchange {w.exchange_name}") from e
 
 
-async def main(live=True):
+async def run_core(live=True):
 
     global logger
     logger = setup_logging()
@@ -181,6 +82,10 @@ async def main(live=True):
         table = refresh_live(exchanges, MARKETS, watchers_by_market)
         return table
 
+    def print_log(msg):
+        assert isinstance(msg, str)
+        captured_log.append(msg)
+
     # Create first batch of the tasks
     for exchange_name, exchange in exchanges.items():
         for market in MARKETS:
@@ -191,19 +96,43 @@ async def main(live=True):
                 watchers_by_market[market][exchange_name] = watcher
 
     if live:
+
+        captured_log: List[str] = []
+        live_log_handler = BufferedOutputHandler(captured_log)
+
+        logger.handlers.clear()
+        logger.handlers.append(live_log_handler)
+
+        def generate_log_panel():
+            table = refresh_log_messages(captured_log)
+            return table
+
+        layout = Layout()
+
+        layout.split_row(
+            Layout(name="left"),
+            Layout(name="right"),
+        )
+
         console = Console()
-        #live = Live(generate_table(), console=console, screen=True, auto_refresh=False)
-        #live.update(generate_table(), refresh=True)
-        with Live(console=console, screen=True, auto_refresh=False) as live:
+
+        with Live(layout, console=console, screen=True, auto_refresh=False) as live:
 
             last_update = time.time()
-            live.update(generate_table(), refresh=True)
+
+            layout["left"].update(generate_table())
+            layout["right"].update(generate_log_panel())
+            # live.update(generate_table(), refresh=True)
 
             # Run the main loop
             while True:
+
                 await run_duty_cycle(watchers)
+
                 if time.time() - last_update > 4.0:
-                    live.update(generate_table(), refresh=True)
+                    layout["left"].update(generate_table())
+                    layout["right"].update(generate_log_panel())
+                    live.refresh()
                     last_update = time.time()
 
     else:
@@ -212,4 +141,12 @@ async def main(live=True):
             await run_duty_cycle(watchers)
 
 
-asyncio.get_event_loop().run_until_complete(main())
+
+def main(live: bool = True):
+    asyncio.get_event_loop().run_until_complete(run_core(live))
+
+
+if __name__ == "__main__":
+    typer.run(main)
+
+
