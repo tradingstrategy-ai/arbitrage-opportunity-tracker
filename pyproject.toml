@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "order-book-recorder"
+name = "order_book_recorder"
 version = "0.1.0"
-description = "Record CEX orderbooks using CCXT"
+description = "Record CEX order books using CCXT"
 authors = ["Mikko Ohtamaa <mikko@opensourcehacker.com>"]
 
 [tool.poetry.dependencies]
@@ -9,6 +9,7 @@ python = "^3.8"
 ccxt = "^1.57.95"
 ccxtpro = {path = "./ccxt-pro/python", develop = true}
 ipdb = "^0.13.9"
+coloredlogs = "^15.0.1"
 
 [tool.poetry.dev-dependencies]
 
