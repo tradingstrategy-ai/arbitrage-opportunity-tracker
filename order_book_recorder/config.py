@@ -25,9 +25,8 @@ MARKET_DEPTHS = {
     "ETH/EUR": ETH_DEPTHS,
 }
 
-# Raise alert if the profitability is more than 20 BPS
-# ALERT_THRESHOLD = 0.002
-ALERT_THRESHOLD = 0.0003
+# Raise alert if the profitability is more than 15 BPS
+ALERT_THRESHOLD = 0.0015
 
 # Retrigger alert for every 5 BPS move to higher arb
 RETRIGGER_THRESHOLD = 0.0005
@@ -43,11 +42,7 @@ async def setup_exchanges():
         "Kraken": ccxtpro.kraken({'enableRateLimit': True}),
         "Gemini": ccxt.gemini({'enableRateLimit': True}),
         "Coinbase": ccxtpro.coinbasepro({'enableRateLimit': True}),
-        "Exmo": ccxt.exmo({
-            'apiKey': os.environ["EXMO_API_KEY"],
-            'secret': os.environ["EXMO_API_SECRET"],
-            'enableRateLimit': True
-        }),
+        "Exmo": ccxt.exmo({'enableRateLimit': True}),
     }
 
     for name, xchg in exchanges.items():

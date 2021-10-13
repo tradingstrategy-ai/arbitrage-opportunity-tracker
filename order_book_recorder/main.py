@@ -17,6 +17,7 @@ from order_book_recorder.config import setup_exchanges, MARKETS, BTC_DEPTHS, ETH
     RETRIGGER_THRESHOLD
 from order_book_recorder.logger import setup_logging
 from order_book_recorder.logtable import refresh_log_messages, BufferedOutputHandler
+from order_book_recorder.notify import notify
 from order_book_recorder.opportunity import Opportunity, find_opportunities
 from order_book_recorder.pricetable import refresh_live
 from order_book_recorder.watcher import Watcher
@@ -213,14 +214,26 @@ async def run_core_logged(exchanges: list, watchers: List[Watcher], watchers_by_
             last_update = time.time()
 
 
-async def run_core(live=True):
+async def run_core(live=True, log_filename=None):
 
     global logger
-    logger = setup_logging()
+    logger = setup_logging(log_filename=log_filename)
 
+    logger.info("Logging to %s", log_filename)
     logger.info("Starting, Telegram available: %s", telegram.is_enabled())
 
     exchanges = await setup_exchanges()
+
+    exchange_names = ", ".join(list(exchanges.keys()))
+
+    alert_threshold = ALERT_THRESHOLD
+
+    msg = f"""
+        Connected exchanges: {exchange_names}
+        Profitability alert threshold: {alert_threshold * 100:,.5f}%
+    """
+
+    notify(f"⚡️ Arbitrage opportunity tracker starting", msg)
 
     watchers = []
 
@@ -250,9 +263,9 @@ async def run_core(live=True):
         await run_core_logged(exchanges, watchers, watchers_by_market)
 
 
-def main(live: bool = True):
+def main(live: bool = True, log_filename: str = None):
     try:
-        asyncio.get_event_loop().run_until_complete(run_core(live))
+        asyncio.get_event_loop().run_until_complete(run_core(live, log_filename))
     except Exception as e:
         # Make sure we get a crash reason in the logs
         if logger:

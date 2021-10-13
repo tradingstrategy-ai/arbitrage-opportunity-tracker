@@ -4,7 +4,7 @@ from logging import Logger
 import coloredlogs
 
 
-def setup_logging(log_level=logging.INFO) -> Logger:
+def setup_logging(log_level=logging.INFO, log_filename=None) -> Logger:
     """Setup root logger and quiet some levels."""
     logger = logging.getLogger()
 
@@ -36,5 +36,12 @@ def setup_logging(log_level=logging.INFO) -> Logger:
 
     # Flooding of OpenAPI spec debug notes on startup
     logging.getLogger("openapi_spec_validator").setLevel(logging.WARNING)
+
+    if log_filename:
+        # Append to the log file
+        handler = logging.FileHandler(log_filename, 'w+')
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
 
     return logger
