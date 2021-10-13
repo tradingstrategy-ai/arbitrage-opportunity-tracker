@@ -13,6 +13,8 @@ coloredlogs = "^15.0.1"
 rich = "^10.12.0"
 typer = "^0.4.0"
 requests = "^2.26.0"
+requests-futures = "^1.0.0"
+aiohttp = "^3.7.4"
 
 [tool.poetry.dev-dependencies]
 

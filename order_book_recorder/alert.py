@@ -1,5 +1,6 @@
 import logging
 import datetime
+from asyncio import create_task
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -23,6 +24,7 @@ ALERT_TEXT = """
     Sell at: {a.sell_exchange} {a.sell_price} {a.quote_token}
     Arb opportunity: {a.diff} {a.quote_token}
     Profitability: {a.profitability}
+    Potential profit: {a.potential_profit} {a.quote_token}
     Started: {a.started}
     Ended: {a.friendly_ended}
     Duration: {a.duration}    
@@ -71,6 +73,10 @@ class Alert:
         return f"{self.max_opportunity.diff:,.2f}"
 
     @property
+    def potential_profit(self):
+        return f"{self.max_opportunity.diff * self.max_opportunity.quantity:,.2f}"
+
+    @property
     def duration(self) -> str:
         if not self.ended:
             return "---"
@@ -85,28 +91,29 @@ class Alert:
         return ALERT_TEXT.format(a=self)
 
 
-def send_message(title, formatted):
+async def send_message(title, formatted):
     """Send alert message to various enabled channels (Telegram)"""
     logger.info("%s: %s", title, formatted)
-    notify(title, formatted)
+    # Immediately return and don't wait asyncio success
+    create_task(notify(title, formatted))
 
 
-def notify_started(a: Alert):
+async def notify_started(a: Alert):
     formatted = a.output_nicely()
-    send_message("✅ Opportunity started", formatted)
+    await send_message("✅ Opportunity started", formatted)
 
 
-def notify_ended(a: Alert):
+async def notify_ended(a: Alert):
     formatted = a.output_nicely()
-    send_message("🛑 Opportunity ended", formatted)
+    await send_message("🛑 Opportunity ended", formatted)
 
 
-def notify_upgraded(a: Alert):
+async def notify_upgraded(a: Alert):
     formatted = a.output_nicely()
-    send_message("🔥 Opportunity upgraded", formatted)
+    await send_message("🔥 Opportunity upgraded", formatted)
 
 
-def update_alerts(all_opportunities: Dict[str, Dict[float, List[Opportunity]]], alert_threshold, retrigger_threshold):
+async def update_alerts(all_opportunities: Dict[str, Dict[float, List[Opportunity]]], alert_threshold, retrigger_threshold):
     """When the arbitrage opportunity exceeds a threshold, then fire up an alert.
 
     :param opportunities: Current opportunities
@@ -139,7 +146,7 @@ def update_alerts(all_opportunities: Dict[str, Dict[float, List[Opportunity]]], 
         if key not in triggered:
             alert.ended = datetime.datetime.utcnow()
             past_alerts.append(alert)
-            notify_ended(alert)
+            await notify_ended(alert)
             to_delete.append(key)
 
     # Do not modify dict during iteration
@@ -150,14 +157,14 @@ def update_alerts(all_opportunities: Dict[str, Dict[float, List[Opportunity]]], 
     for key, alert in triggered.items():
         if key not in active_alerts:
             active_alerts[key] = alert
-            notify_started(alert)
+            await notify_started(alert)
 
     # See if we need to upgrade our alerts for higher profitability
     for key, alert in triggered.items():
         existing_alert = active_alerts[key]
         if alert.max_opportunity.profit_without_fees - existing_alert.max_opportunity.profit_without_fees > retrigger_threshold:
             existing_alert.max_opportunity = alert.max_opportunity
-            notify_upgraded(existing_alert)
+            await notify_upgraded(existing_alert)
 
 
 

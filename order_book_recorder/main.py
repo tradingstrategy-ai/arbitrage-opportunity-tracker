@@ -177,7 +177,7 @@ async def run_core_logged(exchanges: list, watchers: List[Watcher], watchers_by_
     while True:
         all_opportunities = await run_duty_cycle(watchers)
 
-        update_alerts(all_opportunities, ALERT_THRESHOLD, RETRIGGER_THRESHOLD)
+        await update_alerts(all_opportunities, ALERT_THRESHOLD, RETRIGGER_THRESHOLD)
 
         # Regularly log the best opportunities to the logging output
         if time.time() - last_update > update_delay:
@@ -230,10 +230,13 @@ async def run_core(live=True, log_filename=None):
 
     msg = f"""
         Connected exchanges: {exchange_names}
-        Profitability alert threshold: {alert_threshold * 100:,.5f}%
-    """
+        Profitability alert threshold: {alert_threshold * 100:,.5f}%\n"""
 
-    notify(f"⚡️ Arbitrage opportunity tracker starting", msg)
+    for market, depths in MARKET_DEPTHS.items():
+        base_token = market.split("/")[0]
+        msg += f"        Watching {market} markets at depths: {depths} {base_token}\n"
+
+    await notify(f"⚡️ Arbitrage opportunity tracker starting", msg)
 
     watchers = []
 

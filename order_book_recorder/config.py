@@ -13,8 +13,11 @@ logger = logging.getLogger(__name__)
 # Watch depths for different coins
 
 # $100, $500, $2000, $5000
-BTC_DEPTHS = [0.002, 0.01, 0.04, 0.1]
-ETH_DEPTHS = [0.0285, 0.1428, 0.5714, 1.4285]
+#BTC_DEPTHS = [0.002, 0.01, 0.04, 0.1]
+#ETH_DEPTHS = [0.0285, 0.1428, 0.5714, 1.4285]
+
+BTC_DEPTHS = [0.1]
+ETH_DEPTHS = [1.4285]
 
 MARKETS = ["BTC/GBP", "ETH/GBP", "BTC/EUR", "ETH/EUR"]
 
@@ -26,7 +29,8 @@ MARKET_DEPTHS = {
 }
 
 # Raise alert if the profitability is more than 15 BPS
-ALERT_THRESHOLD = 0.0015
+# ALERT_THRESHOLD = 0.0018
+ALERT_THRESHOLD = 0.0005
 
 # Retrigger alert for every 5 BPS move to higher arb
 RETRIGGER_THRESHOLD = 0.0005
