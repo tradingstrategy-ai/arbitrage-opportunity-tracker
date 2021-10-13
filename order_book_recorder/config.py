@@ -30,7 +30,7 @@ MARKET_DEPTHS = {
 
 # Raise alert if the profitability is more than 15 BPS
 # ALERT_THRESHOLD = 0.0018
-ALERT_THRESHOLD = 0.0005
+ALERT_THRESHOLD = 0.0018
 
 # Retrigger alert for every 5 BPS move to higher arb
 RETRIGGER_THRESHOLD = 0.0005

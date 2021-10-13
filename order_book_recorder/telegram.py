@@ -3,7 +3,6 @@ import logging
 
 import aiohttp
 
-
 from order_book_recorder import config
 
 

@@ -5,7 +5,7 @@ from typing import Optional, Dict, List, Union, Callable
 from concurrent.futures import ThreadPoolExecutor
 from ccxtpro.base.exchange import Exchange as ProExchange
 from ccxt.base.exchange import Exchange as SyncExchange
-from ccxt.base.errors import RateLimitExceeded, ExchangeNotAvailable
+from ccxt.base.errors import RateLimitExceeded, ExchangeNotAvailable, RequestTimeout
 
 from order_book_recorder.depth import Side, calculate_price_at_depths
 from order_book_recorder.utils import to_async
@@ -96,6 +96,10 @@ class Watcher:
                 time.sleep(delay)
                 tries -= 1
                 delay *= 1.25
+            except RequestTimeout:
+                # Gemini again
+                logger.warning("Exchange timed out %s", self.exchange_name)
+                return {"asks": [], "bids": []}
             except ExchangeNotAvailable:
                 # <head><title>502 Bad Gateway</title></head>
                 # ccxt.base.errors.ExchangeNotAvailable: gemini GET https://api.gemini.com/v1/book/btcgbp?limit_bids=100&limit_asks=100 502 Bad Gateway <html>
@@ -132,8 +136,13 @@ class Watcher:
     def refresh_depths(self):
         """Update exchange market depths"""
         #  BTC/GBP [42038.45, 0.083876] [42017.45, 0.03815124]
-        self.ask_price = self.orderbook["asks"][0][0]
-        self.bid_price = self.orderbook["bids"][0][0]
+
+        if len(self.orderbook["asks"]) > 0:
+            # Gemini can return empty orderbook when it crashes
+            self.ask_price = self.orderbook["asks"][0][0]
+
+        if len(self.orderbook["bids"]) > 0:
+            self.bid_price = self.orderbook["bids"][0][0]
 
         ask_success, self.ask_levels, max_ask = calculate_price_at_depths(self.orderbook["asks"], Side.ask, self.depth_levels)
         bid_success, self.bid_levels, max_bid = calculate_price_at_depths(self.orderbook["bids"], Side.bid, self.depth_levels)
