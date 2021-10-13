@@ -4,16 +4,10 @@ import enum
 from typing import List, Tuple
 
 
+from .side import Side
+
+
 logger = logging.getLogger(__name__)
-
-
-class Side(enum.Enum):
-
-    # Sell side, orders are trying to sell token at this price
-    ask = "ask"
-
-    # Buy side, orders are trying to buy token at this price
-    bid = "bid"
 
 
 def calculate_price_at_depths(orders: list, side: Side, target_levels: List[float]) -> Tuple[bool, dict, float]:
