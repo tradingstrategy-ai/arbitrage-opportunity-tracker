@@ -1,3 +1,4 @@
+import datetime
 import logging
 import string
 import time
@@ -55,7 +56,7 @@ def update_opportunities(watchers: List[Watcher], measured_market_depths: Dict[s
             # Create depth tables
             for watcher in market_watchers:
 
-                if "depth" in watcher.ask_levels:
+                if depth in watcher.ask_levels:
                     # Watcher might not have data available yet
                     depth_asks[watcher.exchange_name] = watcher.ask_levels[depth]
                     depth_bids[watcher.exchange_name] = watcher.bid_levels[depth]
@@ -63,7 +64,7 @@ def update_opportunities(watchers: List[Watcher], measured_market_depths: Dict[s
             # Find opportunities in this depth
             opportunities = find_opportunities(market, depth, depth_asks, depth_bids)
 
-            logger.info("Opportunities for %s %s: %s", market, depth, opportunities)
+            # logger.info("Opportunities for %s %s: %s, asks %s, bids %s", market, depth, opportunities, depth_asks, depth_bids)
             all_opportunities[market][depth] = opportunities
 
     return all_opportunities
@@ -166,10 +167,18 @@ async def run_core_logged(exchanges: list, watchers: List[Watcher], watchers_by_
     update_delay = 3.0
     last_update = 0
 
-    def log_opportunity(name, market, depth, best):
+    def log_opportunity(opportunity, market, depth, best):
+        base, quote = market.split("/")
         profitability = best.profit_without_fees
         formatted_profitability = f"{profitability * 100:,.5f}%"
-        logger.info("(%s) %s: %s best is %s with buy %s - sell %s with profitability %s, buy %f and sell %f", name, market, depth, best.buy_exchange, best.sell_exchange, formatted_profitability, best.buy_price, best.sell_price)
+
+        # Fiat prices with two decimals
+        buy_price = "{:,.2f}".format(best.buy_price)
+        sell_price = "{:,.2f}".format(best.sell_price)
+        diff = "{:,.2f}".format(best.diff)
+
+        msg = f"{market} {opportunity} (@{depth:.4f} {base}) is {formatted_profitability:9} by buy {best.buy_exchange:10} {buy_price:10} - sell {best.sell_exchange:10} - {sell_price:10} ({diff} {quote})"
+        logger.info(msg)
 
     while True:
         all_opportunities = await run_duty_cycle(watchers)
@@ -177,11 +186,15 @@ async def run_core_logged(exchanges: list, watchers: List[Watcher], watchers_by_
         # Regularly log the best opportunities to the logging output
         if time.time() - last_update > update_delay:
 
+            logger.info("Opportunities %s", datetime.datetime.utcnow())
+
             # Log out the prices
             for market, market_watchers in watchers_by_market.items():
                 ticker_feed = [f"{market} --- "]
                 for name, w in market_watchers.items():
-                    ticker_feed.append(f"{name} A:{w.ask_price or '---':10} B:{w.bid_price or '---':10}")
+                    ask_price = "{:,.2f}".format(w.ask_price) if w.ask_price else "---"
+                    bid_price = "{:,.2f}".format(w.bid_price) if w.bid_price else "---"
+                    ticker_feed.append(f"{name} A:{ask_price:10} B:{bid_price:10}")
 
                 logger.info(" ".join(ticker_feed))
 
@@ -195,9 +208,12 @@ async def run_core_logged(exchanges: list, watchers: List[Watcher], watchers_by_
                         logger.warning("%s %s - not yet available opportunities", market, depth)
                     else:
                         best = depth_opportunities[0]
-                        second_best = depth_opportunities[1]
-                        log_opportunity("best", market, depth, best)
-                        log_opportunity("second", market, depth, second_best)
+
+                        log_opportunity("#1", market, depth, best)
+
+                        if len(depth_opportunities) >= 2:
+                            second_best = depth_opportunities[1]
+                            log_opportunity("#2", market, depth, second_best)
 
             last_update = time.time()
 

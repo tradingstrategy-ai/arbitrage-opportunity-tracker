@@ -21,6 +21,11 @@ class Opportunity:
         """Get % arbitrage profit this trade would make"""
         return (self.sell_price - self.buy_price) / self.buy_price
 
+    @property
+    def diff(self) -> float:
+        """Fiat arbitrage window"""
+        return self.sell_price - self.buy_price
+
 
 def find_opportunities(market: str, depth_quantity: float, depth_asks: Dict[str, float], depth_bids: Dict[str, float]) -> List[Opportunity]:
     """Get a list of opportunities, for each depth level, ranked from the best to high.
@@ -33,10 +38,11 @@ def find_opportunities(market: str, depth_quantity: float, depth_asks: Dict[str,
     """
 
     opportunities = []
-    for ask_exchange, ask_price in depth_asks:
-        for bid_exchange, bid_price in depth_bids:
+    for ask_exchange, ask_price in depth_asks.items():
+        for bid_exchange, bid_price in depth_bids.items():
 
             o = Opportunity(
+                market=market,
                 buy_exchange=ask_exchange,
                 sell_exchange=bid_exchange,
                 buy_price=ask_price,

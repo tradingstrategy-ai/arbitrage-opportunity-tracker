@@ -5,7 +5,7 @@ from typing import Optional, Dict, List, Union, Callable
 from concurrent.futures import ThreadPoolExecutor
 from ccxtpro.base.exchange import Exchange as ProExchange
 from ccxt.base.exchange import Exchange as SyncExchange
-from ccxt.base.errors import RateLimitExceeded
+from ccxt.base.errors import RateLimitExceeded, ExchangeNotAvailable
 
 from order_book_recorder.depth import Side, calculate_price_at_depths
 from order_book_recorder.utils import to_async
@@ -83,7 +83,7 @@ class Watcher:
 
         needs_sleeping = self.min_fetch_delay - (time.time() - self.last_fetch)
         if needs_sleeping > 0:
-            logger.info("Adding some sleep for %s: %f", self.exchange_name, needs_sleeping)
+            # logger.info("Adding some sleep for %s: %f", self.exchange_name, needs_sleeping)
             time.sleep(needs_sleeping)
 
         while tries:
@@ -96,6 +96,11 @@ class Watcher:
                 time.sleep(delay)
                 tries -= 1
                 delay *= 1.25
+            except ExchangeNotAvailable:
+                # <head><title>502 Bad Gateway</title></head>
+                # ccxt.base.errors.ExchangeNotAvailable: gemini GET https://api.gemini.com/v1/book/btcgbp?limit_bids=100&limit_asks=100 502 Bad Gateway <html>
+                logger.warning("Exchange not available %s", self.exchange_name)
+                return {"asks": [], "bids": []}
 
     def create_task(self):
         self.done = False
