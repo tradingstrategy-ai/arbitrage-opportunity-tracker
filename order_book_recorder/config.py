@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 #ETH_DEPTHS = [0.0285, 0.1428, 0.5714, 1.4285]
 
 BTC_DEPTHS = [0.04]
-ETH_DEPTHS = [0.57]
+ETH_DEPTHS = [0.5]
 
 MARKETS = ["BTC/GBP", "ETH/GBP", "BTC/EUR", "ETH/EUR"]
 
@@ -34,9 +34,17 @@ ALERT_THRESHOLD = 0.0018
 # Retrigger alert for every 5 BPS move to higher arb
 RETRIGGER_THRESHOLD = 0.0005
 
-
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
 TELEGRAM_API_KEY = os.environ.get("TELEGRAM_API_KEY")
+
+
+REDIS_CONFIG = {
+    "host": "localhost",
+    "port": 6379,
+    "retry_on_timeout": True,
+    "socket_timeout": 20
+}
 
 
 async def setup_exchanges():
