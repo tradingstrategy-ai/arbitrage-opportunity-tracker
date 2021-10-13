@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from ccxtpro.base.exchange import Exchange as ProExchange
 from ccxt.base.exchange import Exchange as SyncExchange
 from ccxt.base.errors import RateLimitExceeded
+
+from order_book_recorder.depth import Side, calculate_price_at_depths
 from order_book_recorder.utils import to_async
 
 # Create a thread pool where sync exchange APIs will be executed
@@ -18,22 +20,34 @@ logger = logging.getLogger(__name__)
 class Watcher:
 
     exchange_name: str
-    pair: str
+    market: str
     exchange: Union[ProExchange, SyncExchange]
     orderbook: dict
     task: Optional[Task]
     done: bool
 
-    def __init__(self, exchange_name: str, pair: str, exchange):
+    def __init__(self, exchange_name: str, pair: str, exchange, depth_levels: List[float]):
+        """
+
+        :param exchange_name: Human readable name for this exchange
+        :param pair: e.g. BTC/EUR
+        :param exchange: CCXT/CCXT Pro exchange object
+        :param depth_levels: Watched depth levels
+        """
         self.exchange_name = exchange_name
-        self.pair = pair
+        self.market = pair
         self.exchange = exchange
         self.task = None
         self.done = False
+        self.depth_levels = depth_levels
         self.task_count = 0
 
         self.ask_price = None
         self.bid_price = None
+
+        # [quantity target, price] maps
+        self.ask_levels = {}
+        self.bid_levels = {}
 
         self.order_book_limit = 100
 
@@ -59,7 +73,7 @@ class Watcher:
         return self
 
     async def watch_async(self):
-        return await self.exchange.watch_order_book(self.pair, limit=self.order_book_limit)
+        return await self.exchange.watch_order_book(self.market, limit=self.order_book_limit)
 
     @to_async(executor=sync_exchange_thread_pool)
     def watch_sync(self):
@@ -74,7 +88,7 @@ class Watcher:
 
         while tries:
             try:
-                order_book = self.exchange.fetch_order_book(self.pair, limit=self.order_book_limit)
+                order_book = self.exchange.fetch_order_book(self.market, limit=self.order_book_limit)
                 self.last_fetch = time.time()
                 return order_book
             except RateLimitExceeded:
@@ -86,7 +100,7 @@ class Watcher:
     def create_task(self):
         self.done = False
         self.task_count += 1
-        self.task = create_task(self.start_watching(), name=f"{self.exchange_name}: {self.pair} task #{self.task_count}")
+        self.task = create_task(self.start_watching(), name=f"{self.exchange_name}: {self.market} task #{self.task_count}")
         return self.task
 
     def is_task_pending(self):
@@ -115,6 +129,15 @@ class Watcher:
         #  BTC/GBP [42038.45, 0.083876] [42017.45, 0.03815124]
         self.ask_price = self.orderbook["asks"][0][0]
         self.bid_price = self.orderbook["bids"][0][0]
+
+        ask_success, self.ask_levels, max_ask = calculate_price_at_depths(self.orderbook["asks"], Side.ask, self.depth_levels)
+        bid_success, self.bid_levels, max_bid = calculate_price_at_depths(self.orderbook["bids"], Side.bid, self.depth_levels)
+
+        if not ask_success:
+            logger.warning("Could not map out ask levels %s on %s %s, got max ask inventory %f", self.exchange_name, self.market, self.depth_levels, max_ask)
+
+        if not bid_success:
+            logger.warning("Could not map out bid levels %s on %s %s, got max bid inventory %f", self.exchange_name, self.market, self.depth_levels, max_bid)
 
     def get_spread(self):
         assert self.has_data()

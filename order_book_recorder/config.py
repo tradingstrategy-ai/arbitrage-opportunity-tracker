@@ -10,13 +10,29 @@ from ccxt.base.exchange import Exchange as SyncExchange
 logger = logging.getLogger(__name__)
 
 
+# Watch depths for different coins
+
+# $100, $500, $2000, $5000
+BTC_DEPTHS = [0.002, 0.01, 0.04, 0.1]
+ETH_DEPTHS = [0.02857142857142857, 0.14285714285714285, 0.5714285714285714, 1.4285714285714286]
+
+MARKETS = ["BTC/GBP", "ETH/GBP", "BTC/EUR", "ETH/EUR"]
+
+MARKET_DEPTHS = {
+    "BTC/GBP": BTC_DEPTHS,
+    "BTC/EUR": BTC_DEPTHS,
+    "ETH/GBP": ETH_DEPTHS,
+    "ETH/EUR": ETH_DEPTHS,
+}
+
+
 async def setup_exchanges():
     exchanges = {
-        "huobi": ccxtpro.huobi({'enableRateLimit': True}),
-        "kraken": ccxtpro.kraken({'enableRateLimit': True}),
-        "gemini": ccxt.gemini({'enableRateLimit': True}),
-        "coinbase": ccxtpro.coinbasepro({'enableRateLimit': True}),
-        "exmo": ccxt.exmo({
+        "Huobi": ccxtpro.huobi({'enableRateLimit': True}),
+        "Kraken": ccxtpro.kraken({'enableRateLimit': True}),
+        "Gemini": ccxt.gemini({'enableRateLimit': True}),
+        "Coinbase": ccxtpro.coinbasepro({'enableRateLimit': True}),
+        "Exmo": ccxt.exmo({
             'apiKey': os.environ["EXMO_API_KEY"],
             'secret': os.environ["EXMO_API_SECRET"],
             'enableRateLimit': True
