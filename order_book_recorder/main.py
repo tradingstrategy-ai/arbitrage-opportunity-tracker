@@ -63,6 +63,7 @@ def update_opportunities(watchers: List[Watcher], measured_market_depths: Dict[s
             # Find opportunities in this depth
             opportunities = find_opportunities(market, depth, depth_asks, depth_bids)
 
+            logger.info("Opportunities for %s %s: %s", market, depth, opportunities)
             all_opportunities[market][depth] = opportunities
 
     return all_opportunities
