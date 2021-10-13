@@ -25,6 +25,17 @@ MARKET_DEPTHS = {
     "ETH/EUR": ETH_DEPTHS,
 }
 
+# Raise alert if the profitability is more than 20 BPS
+# ALERT_THRESHOLD = 0.002
+ALERT_THRESHOLD = 0.0003
+
+# Retrigger alert for every 5 BPS move to higher arb
+RETRIGGER_THRESHOLD = 0.0005
+
+
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+TELEGRAM_API_KEY = os.environ.get("TELEGRAM_API_KEY")
+
 
 async def setup_exchanges():
     exchanges = {

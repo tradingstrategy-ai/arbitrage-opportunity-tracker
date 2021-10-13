@@ -1,31 +1,24 @@
 import datetime
 import logging
-import string
 import time
 import asyncio
-from asyncio import Task, create_task
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, Dict, List, Union, Callable
+from typing import Dict, List
 
-import ccxt
 from rich.layout import Layout
 
-import ccxtpro
-from ccxtpro.base.exchange import Exchange as ProExchange
-from ccxt.base.exchange import Exchange as SyncExchange
-from ccxt.base.errors import RateLimitExceeded
 import typer
 from rich.live import Live
-from rich.table import Table
 from rich.console import Console
 
-from order_book_recorder.config import setup_exchanges, MARKETS, BTC_DEPTHS, ETH_DEPTHS, MARKET_DEPTHS
+from order_book_recorder import telegram
+from order_book_recorder.alert import update_alerts
+from order_book_recorder.config import setup_exchanges, MARKETS, BTC_DEPTHS, ETH_DEPTHS, MARKET_DEPTHS, ALERT_THRESHOLD, \
+    RETRIGGER_THRESHOLD
 from order_book_recorder.logger import setup_logging
 from order_book_recorder.logtable import refresh_log_messages, BufferedOutputHandler
 from order_book_recorder.opportunity import Opportunity, find_opportunities
 from order_book_recorder.pricetable import refresh_live
-from order_book_recorder.utils import to_async
 from order_book_recorder.watcher import Watcher
 
 
@@ -183,6 +176,8 @@ async def run_core_logged(exchanges: list, watchers: List[Watcher], watchers_by_
     while True:
         all_opportunities = await run_duty_cycle(watchers)
 
+        update_alerts(all_opportunities, ALERT_THRESHOLD, RETRIGGER_THRESHOLD)
+
         # Regularly log the best opportunities to the logging output
         if time.time() - last_update > update_delay:
 
@@ -223,6 +218,8 @@ async def run_core(live=True):
     global logger
     logger = setup_logging()
 
+    logger.info("Starting, Telegram available: %s", telegram.is_enabled())
+
     exchanges = await setup_exchanges()
 
     watchers = []
@@ -254,7 +251,14 @@ async def run_core(live=True):
 
 
 def main(live: bool = True):
-    asyncio.get_event_loop().run_until_complete(run_core(live))
+    try:
+        asyncio.get_event_loop().run_until_complete(run_core(live))
+    except Exception as e:
+        # Make sure we get a crash reason in the logs
+        if logger:
+            logger.error("Crashed")
+            logger.exception(e)
+        raise e
 
 
 if __name__ == "__main__":
