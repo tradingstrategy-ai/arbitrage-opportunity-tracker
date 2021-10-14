@@ -74,10 +74,12 @@ export TELEGRAM_CHAT_ID="-111113672"
 
 # Examining time series data
 
-You can fire up `redis-cli`:
+Ask and bid price is recorded to [Redis Timeseries](https://oss.redis.com/redistimeseries/) at depths specified in the config.
+
+Here is an example how to examine this data with `redis-cli`:
 
 ```shell
-docker exec -it redistimeseries rediskea-cli
+docker exec -it redistimeseries redis-cli
 ```
 
 Then:

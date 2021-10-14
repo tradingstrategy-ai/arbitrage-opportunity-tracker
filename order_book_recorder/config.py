@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 # BTC_DEPTHS = [0.002, 0.01, 0.04, 0.1]
 # ETH_DEPTHS = [0.0285, 0.1428, 0.5714, 1.4285]
 
-BTC_DEPTHS = [0.04, 0.2]
-ETH_DEPTHS = [0.5, 3]
+BTC_DEPTHS = [0.04]
+ETH_DEPTHS = [0.5]
 
 # BTC_DEPTHS = [0.04]
 # ETH_DEPTHS = [0.5]
@@ -33,7 +33,8 @@ MARKET_DEPTHS = {
 
 # Raise alert if the profitability is more than 15 BPS
 # ALERT_THRESHOLD = 0.0018
-ALERT_THRESHOLD = 0.0018
+# ALERT_THRESHOLD = 0.0018
+ALERT_THRESHOLD = 0.0005
 
 # Retrigger alert for every 5 BPS move to higher arb
 RETRIGGER_THRESHOLD = 0.0005

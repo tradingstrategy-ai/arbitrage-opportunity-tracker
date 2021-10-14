@@ -27,7 +27,9 @@ ALERT_TEXT = """
     Potential profit: {a.potential_profit} {a.quote_token}
     Started: {a.started}
     Ended: {a.friendly_ended}
-    Duration: {a.duration}    
+    Profitability at end: {a.friendly_profitability_at_end}
+    Opportunity duration: {a.duration}   
+     
 """
 
 
@@ -54,9 +56,7 @@ class Alert:
 
     started: datetime.datetime
     ended: Optional[datetime.datetime] = None
-
-    # Telegram has been notified
-    notification_sent_at: Optional[datetime.datetime] = None
+    profitability_at_end: Optional[float] = None
 
     @property
     def key(self):
@@ -77,7 +77,6 @@ class Alert:
     @property
     def sell_exchange(self) -> str:
         return self.max_opportunity.sell_exchange
-
 
     @property
     def buy_price(self) -> str:
@@ -109,6 +108,10 @@ class Alert:
     @property
     def friendly_ended(self):
         return self.ended or "ongoing"
+
+    @property
+    def friendly_profitability_at_end(self):
+        return f"{self.profitability_at_end * 100:,.5f}%" if self.profitability_at_end else "---"
 
     def output_nicely(self):
         return ALERT_TEXT.format(a=self)
@@ -145,6 +148,8 @@ async def update_alerts(all_opportunities: Dict[str, Dict[float, List[Opportunit
     triggered = []
     triggered_markets = set()
 
+    market_final_profitabilities = {}
+
     # Write out top opportunities for each market and depth on each cycle
     for market, depths in all_opportunities.items():
         depth_opportunities: List[Opportunity]
@@ -163,11 +168,15 @@ async def update_alerts(all_opportunities: Dict[str, Dict[float, List[Opportunit
                     triggered.append(alert)
                     triggered_markets.add(alert.key)
 
+                key = f"{market} @{depth}"
+                market_final_profitabilities[key] = max(market_final_profitabilities.get(market, -1000), opportunity.profit_without_fees)
+
     # Close old alerts
     to_delete = []
     for key, alert in active_alerts.items():
         if key not in triggered_markets:
             alert.ended = datetime.datetime.utcnow()
+            alert.profitability_at_end = market_final_profitabilities[key]
             past_alerts.append(alert)
             await notify_ended(alert)
             to_delete.append(key)
@@ -208,9 +217,11 @@ async def update_alerts(all_opportunities: Dict[str, Dict[float, List[Opportunit
 
     # Send notifications
     for alert in notify_active.values():
+        active_alerts[alert.key] = alert
         await notify_started(alert)
 
     for alert in notify_upgrade.values():
+        active_alerts[alert.key].max_opportunity = alert.max_opportunity
         await notify_upgraded(alert)
 
 
