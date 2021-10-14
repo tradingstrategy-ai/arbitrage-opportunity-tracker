@@ -8,6 +8,25 @@ This project uses [CCXT Pro](https://ccxt.pro/) that is a paid service. You need
 
 **This project is not going to be actively maintained. If you are interested using this code please reach out in Discord.** 
 
+# Features
+
+It will show the arbitration opportunities between exchanges. Currently Python logging output support.
+
+```
+BTC/GBP #1 (@0.0400 BTC) is 0.09564%  by buy Coinbase   41,875.95  - sell Bitfinex   - 41,916.00  (40.05 GBP)
+BTC/GBP #2 (@0.0400 BTC) is 0.03556%  by buy Coinbase   41,875.95  - sell Bitstamp   - 41,890.84  (14.89 GBP)
+BTC/EUR #1 (@0.0400 BTC) is 0.05433%  by buy Coinbase   49,428.15  - sell Bitfinex   - 49,455.00  (26.85 EUR)
+BTC/EUR #2 (@0.0400 BTC) is 0.05261%  by buy Kraken     49,429.00  - sell Bitfinex   - 49,455.00  (26.00 EUR)
+ETH/GBP #1 (@0.5000 ETH) is 0.06897%  by buy Coinbase   2,755.40   - sell Bitfinex   - 2,757.30   (1.90 GBP)
+ETH/GBP #2 (@0.5000 ETH) is 0.05082%  by buy Kraken     2,755.90   - sell Bitfinex   - 2,757.30   (1.40 GBP)
+ETH/EUR #1 (@0.5000 ETH) is 0.04951%  by buy Coinbase   3,251.69   - sell Bitfinex   - 3,253.30   (1.61 EUR)
+ETH/EUR #2 (@0.5000 ETH) is 0.01998%  by buy Bitstamp   3,252.65   - sell Bitfinex   - 3,253.30   (0.65 EUR)
+```
+
+The ask and bid levels on specified depth levels can be written to Redis Timeseries database.
+
+A Telegram alert can be send if the arbitration profitabiltiy reaches a certain level. 
+
 # Installation
 
 Checkout.
