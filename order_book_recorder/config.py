@@ -4,7 +4,6 @@ import logging
 import ccxt
 import ccxtpro
 from ccxtpro.base.exchange import Exchange as ProExchange
-from ccxt.base.exchange import Exchange as SyncExchange
 
 
 logger = logging.getLogger(__name__)
@@ -16,8 +15,8 @@ logger = logging.getLogger(__name__)
 #BTC_DEPTHS = [0.002, 0.01, 0.04, 0.1]
 #ETH_DEPTHS = [0.0285, 0.1428, 0.5714, 1.4285]
 
-BTC_DEPTHS = [0.1]
-ETH_DEPTHS = [1.4285]
+BTC_DEPTHS = [0.04]
+ETH_DEPTHS = [0.57]
 
 MARKETS = ["BTC/GBP", "ETH/GBP", "BTC/EUR", "ETH/EUR"]
 

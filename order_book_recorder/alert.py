@@ -33,20 +33,34 @@ ALERT_TEXT = """
 
 @dataclass
 class Alert:
+    """Alert on arbitration opportunity.
+
+    Raised when there is an opportunity.
+
+    Alert is per market - usually it is the weakest exchange vs. strongest exchange
+
+    Alert can change if the profitability increases during the arbitrarion window.
+    `max_opportunity` is updated.
+
+    """
     market: str
-    buy_exchange: str
-    sell_exchange: str
     depth: float
 
+    # What triggered this opportunity originally
     original_opportunity: Opportunity
+
+    # Maximum opportunity during the arbitration window
     max_opportunity: Opportunity
 
     started: datetime.datetime
     ended: Optional[datetime.datetime] = None
 
+    # Telegram has been notified
+    notification_sent_at: Optional[datetime.datetime] = None
+
     @property
     def key(self):
-        return f"{self.market} {self.buy_exchange}-{self.sell_exchange} @{self.depth}"
+        return f"{self.market} @{self.depth}"
 
     @property
     def base_token(self):
@@ -55,6 +69,15 @@ class Alert:
     @property
     def quote_token(self):
         return self.market.split("/")[1]
+
+    @property
+    def buy_exchange(self) -> str:
+        return self.max_opportunity.buy_exchange
+
+    @property
+    def sell_exchange(self) -> str:
+        return self.max_opportunity.sell_exchange
+
 
     @property
     def buy_price(self) -> str:
@@ -119,7 +142,8 @@ async def update_alerts(all_opportunities: Dict[str, Dict[float, List[Opportunit
     :param opportunities: Current opportunities
     """
 
-    triggered = {}
+    triggered = []
+    triggered_markets = set()
 
     # Write out top opportunities for each market and depth on each cycle
     for market, depths in all_opportunities.items():
@@ -131,19 +155,18 @@ async def update_alerts(all_opportunities: Dict[str, Dict[float, List[Opportunit
                     alert = Alert(
                         market=market,
                         depth=depth,
-                        buy_exchange=opportunity.buy_exchange,
-                        sell_exchange=opportunity.sell_exchange,
                         started=datetime.datetime.utcnow(),
                         original_opportunity=opportunity,
                         max_opportunity=opportunity,
                     )
 
-                    triggered[alert.key] = alert
+                    triggered.append(alert)
+                    triggered_markets.add(alert.key)
 
     # Close old alerts
     to_delete = []
     for key, alert in active_alerts.items():
-        if key not in triggered:
+        if key not in triggered_markets:
             alert.ended = datetime.datetime.utcnow()
             past_alerts.append(alert)
             await notify_ended(alert)
@@ -153,18 +176,41 @@ async def update_alerts(all_opportunities: Dict[str, Dict[float, List[Opportunit
     for key in to_delete:
         del active_alerts[key]
 
-    # Trigger alerts for new opportunities
-    for key, alert in triggered.items():
-        if key not in active_alerts:
-            active_alerts[key] = alert
-            await notify_started(alert)
+    # Check which markets trigger alerts on this round
+    # Because we might get multiple opportunites per exchanges
+    # only notify the max opportunity - largest spread between buy and sell
+    notify_active = {}
+    notify_upgrade = {}
 
     # See if we need to upgrade our alerts for higher profitability
-    for key, alert in triggered.items():
-        existing_alert = active_alerts[key]
-        if alert.max_opportunity.profit_without_fees - existing_alert.max_opportunity.profit_without_fees > retrigger_threshold:
-            existing_alert.max_opportunity = alert.max_opportunity
-            await notify_upgraded(existing_alert)
+    for alert in triggered:
+        key = alert.key
 
+        existing_alert = active_alerts.get(key)
+        if not existing_alert:
+            # First notification for this market
+            prior_alert_this_round = notify_active.get(key)
+            if not prior_alert_this_round:
+                notify_active[key] = alert
+            else:
+                # Get weakest and strongest exchange
+                notify_active[key] = notify_active[key] if notify_active[key].profitability > alert.profitability else alert
+        else:
+            # This market has been notified already for this window
+            # see if we need to upgrade the alert
+            if alert.max_opportunity.profit_without_fees - existing_alert.max_opportunity.profit_without_fees > retrigger_threshold:
+                prior_alert_this_round = notify_upgrade.get(key)
+                if not prior_alert_this_round:
+                    notify_upgrade[key] = alert
+                else:
+                    # Get weakest and strongest exchange
+                    notify_upgrade[key] = notify_upgrade[key] if notify_upgrade[key].profitability > alert.profitability else alert
+
+    # Send notifications
+    for alert in notify_active.values():
+        await notify_started(alert)
+
+    for alert in notify_upgrade.values():
+        await notify_upgraded(alert)
 
 
