@@ -1,37 +1,33 @@
 """Redis Timeseries order book depth recorder"""
 
-import enum
+
 import logging
 import socket
 import time
-from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, List
 
 # https://github.com/RedisTimeSeries/redistimeseries-py
 import redis
 from redistimeseries.client import Client
 
+from order_book_recorder import config
+from order_book_recorder.side import Side
+from order_book_recorder.utils import to_async
 
 logger = logging.getLogger(__name__)
 
 _connection: Client = None
 
 
-class Side(enum.Enum):
-    """
-    https://en.wikipedia.org/wiki/Bid%E2%80%93ask_spread
+# Create a thread pool where sync exchange APIs will be executed
+redis_thread_pool = ThreadPoolExecutor()
 
-    Ask > bid always
-    """
+# In-process counter of Redis writes we have done
+redis_updates = 0
 
-    # Sell side
-    ask = "ask"
-
-    # Buy side
-    bid = "bid"
-
-
-def is_enabled(self):
-    return
+def is_enabled():
+    return config.REDIS_CONFIG
 
 
 def has_db():
@@ -75,7 +71,7 @@ def format_key(exchange: str, base_pair: str, quote_pair: str, side: Side, depth
     return f"Orderbook depth: {exchange} {base_pair}-{quote_pair} {side.value} at {depth}"
 
 
-def init_time_series(exchange: str, base_pair: str, quote_pair: str, side: Side, depth: Depth):
+def init_time_series(exchange: str, base_pair: str, quote_pair: str, side: Side, depth: float):
     key = format_key(exchange, base_pair, quote_pair, side, depth)
     rts = get_client()
     if not rts.redis.exists(key):
@@ -85,33 +81,19 @@ def init_time_series(exchange: str, base_pair: str, quote_pair: str, side: Side,
             "base_pair": base_pair,
             "quote_pair": quote_pair,
             "side": side.value,
-            "depth": depth.value
+            "depth": depth
         }
         logger.info(f"Created redis key {key}")
         rts.create(key, labels=labels)
 
 
-def start_tick(timestamp: int, owner_name: str):
-    """Report the bot is active."""
-    r = get_client().redis
-    # key = f"Bot {}"
-    r.hset("bot", owner_name, timestamp)
-
-
-def start_order_book_depth_recording(timestamp: int, exchange: str, base_pair: str, quote_pair: str):
-    """Create a Redis key that expires in 5 minutes just to give us a count of active orbderbooks."""
-    r = get_client().redis
-    key = f"{exchange} {base_pair}-{quote_pair}"
-    r.hset("orderbook scan", key, timestamp)
-
-
-def record_order_book_price(timestamp: int, exchange: str, base_pair: str, quote_pair: str, side: Side, depth: Depth, reporter: str, value: float) -> Optional[dict]:
+def record_order_book_price(rts: Client, timestamp_ms: int, exchange: str, base_pair: str, quote_pair: str, side: Side, depth: float, value: float) -> Optional[dict]:
     """Record order book state for later analysis.
 
     Example for what is the price of a Bitcoin if buying Bitcoin with 1000 USD in Kucoin.
     Value is the value of Bitcoin bought at the price.
 
-    :param timestamp: Bot tick UNIX timestamp as seconds
+    :param timestamp_ms: Bot tick UNIX timestamp as milliseconds
     :param exchange: "kucoin"
     :param base_pair: "BTC"
     :param quote_pair: "USDT"
@@ -121,28 +103,47 @@ def record_order_book_price(timestamp: int, exchange: str, base_pair: str, quote
     :param value: 32,123
     """
 
-    assert type(timestamp) == int, "Got invalid timestamp: %s" % type(timestamp)
+    global redis_updates
+
+    assert type(timestamp_ms) == int, "Got invalid timestamp: %s" % type(timestamp_ms)
     assert type(value) == float, "Got invalid value: %s" % type(value)
 
-    # Expose for testing
-    global _last_recorded_entry
-
-    rts = get_client()
     key = format_key(exchange, base_pair, quote_pair, side, depth)
-
-    #logger.debug(f"Recording {key} {timestamp} {value}")
 
     try:
         # Redis Timeseries expects timestamps as milliseconds
-        rts.add(key, timestamp * 1000, value)
+        rts.add(key, timestamp_ms, value)
+        redis_updates += 1
+
     except redis.exceptions.ResponseError as e:
         if str(e) == 'TSDB: Error at upsert, update is not supported in BLOCK mode':
             # Ignore duplicate keys
+            logger.exception(e)
             return None
 
         #existing = rts.range(key, timestamp, timestamp)
-        raise RuntimeError(f"Could not record {key}={value} at timestamp {timestamp}: {e}") from e
+        raise RuntimeError(f"Could not record {key}={value} at timestamp {timestamp_ms}: {e}") from e
 
-    return {"key": key, "value": value }
+
+@to_async(executor=redis_thread_pool)
+def record_depths(timestamp_ms: int, depth_data: List[dict]):
+    """Write multiple depths to the Redis.
+
+    Run in a separate thread to not to block.
+    """
+
+    assert is_enabled(), "Redis recording is not turned on"
+
+    rts = get_client()
+
+    for r in depth_data:
+        # See Watcher.get_depth_record()
+        exchange_name = r["exchange_name"]
+        market = r["market"]
+        base_pair, quote_pair = market.split("/")
+        for depth, price in r["ask_levels"].items():
+            record_order_book_price(rts, timestamp_ms, exchange_name, base_pair, quote_pair, Side.ask, depth, price)
+        for depth, price in r["bid_levels"].items():
+            record_order_book_price(rts, timestamp_ms, exchange_name, base_pair, quote_pair, Side.bid, depth, price)
 
 

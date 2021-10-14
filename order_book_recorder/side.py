@@ -1,4 +1,6 @@
 """Describe orderbook sides"""
+import enum
+
 
 class Side(enum.Enum):
 

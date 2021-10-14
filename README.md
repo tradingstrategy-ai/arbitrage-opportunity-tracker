@@ -26,6 +26,15 @@ poetry install
 
 # Running
 
+Start Redis with Timeseries extension for recording depth data.
+This will start a Redis instance with password configured by `REDIS_PASSWORD` environment variable.
+
+```shell
+# Read REDIS_HOST and REDIS_PASSWORD
+source secrets-local.env 
+docker-compose up
+```
+
 Activate Poetry shell extensions
 
 ```shell
@@ -60,6 +69,43 @@ Extract chat id from the output and add it to `secrets.env`:
 
 ```
 export TELEGRAM_CHAT_ID="-111113672"
+```
+
+
+# Examining time series data
+
+You can fire up `redis-cli`:
+
+```shell
+docker exec -it redistimeseries rediskea-cli
+```
+
+Then:
+
+```
+AUTH yourlocalpassword
+keys *
+```
+
+You should see recorder data:
+
+
+```
+  1) 
+  2) "Orderbook depth: Coinbase BTC-EUR bid at 0.04"
+  3) "Orderbook depth: Exmo BTC-GBP ask at 0.04"
+  4) "Orderbook depth: Bitfinex BTC-EUR bid at 0.04"
+```
+
+You can query it. For example to get Bitfinex ETH-EUR ask prices all-time.
+
+```
+127.0.0.1:6379> TS.RANGE "Orderbook depth: Bitfinex ETH-EUR ask at 3" - + AGGREGTION avg
+ 1) 1) (integer) 1634236371966
+    2) 3252.50454148169
+ 2) 1) (integer) 1634236373112
+    2) 3252.43330625139
+...
 ```
 
 # Background

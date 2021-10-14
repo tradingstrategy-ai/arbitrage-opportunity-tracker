@@ -49,7 +49,15 @@ class Watcher:
         self.ask_levels = {}
         self.bid_levels = {}
 
-        self.order_book_limit = 100
+        # Hacky hack
+        watch_order_book_limits = {
+            "Bitfinex": 100,
+            "Kraken": 500,
+        }
+
+        watch_limit = watch_order_book_limits.get(self.exchange_name, 200)
+
+        self.order_book_limit = watch_limit
 
         # Sync API throttling
         self.min_fetch_delay = 2.0
@@ -156,3 +164,12 @@ class Watcher:
     def get_spread(self):
         assert self.has_data()
         return (self.ask_price - self.bid_price) / self.bid_price
+
+    def get_depth_record(self) -> Dict:
+        """Export the current orderbook levels for Redis"""
+        return {
+            "exchange_name": self.exchange_name,
+            "market": self.market,
+            "ask_levels": self.ask_levels,
+            "bid_levels": self.bid_levels,
+        }

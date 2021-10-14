@@ -2,6 +2,7 @@ import datetime
 import logging
 import time
 import asyncio
+from asyncio import create_task
 from collections import defaultdict
 from typing import Dict, List
 
@@ -11,7 +12,7 @@ import typer
 from rich.live import Live
 from rich.console import Console
 
-from order_book_recorder import telegram
+from order_book_recorder import telegram, recorder, config
 from order_book_recorder.alert import update_alerts
 from order_book_recorder.config import setup_exchanges, MARKETS, BTC_DEPTHS, ETH_DEPTHS, MARKET_DEPTHS, ALERT_THRESHOLD, \
     RETRIGGER_THRESHOLD
@@ -20,6 +21,7 @@ from order_book_recorder.logtable import refresh_log_messages, BufferedOutputHan
 from order_book_recorder.notify import notify
 from order_book_recorder.opportunity import Opportunity, find_opportunities
 from order_book_recorder.pricetable import refresh_live
+from order_book_recorder.recorder import record_depths, redis_updates
 from order_book_recorder.watcher import Watcher
 
 
@@ -52,8 +54,10 @@ def update_opportunities(watchers: List[Watcher], measured_market_depths: Dict[s
 
                 if depth in watcher.ask_levels:
                     # Watcher might not have data available yet
-                    depth_asks[watcher.exchange_name] = watcher.ask_levels[depth]
-                    depth_bids[watcher.exchange_name] = watcher.bid_levels[depth]
+                    if depth in watcher.ask_levels:
+                        depth_asks[watcher.exchange_name] = watcher.ask_levels[depth]
+                    if depth in watcher.bid_levels:
+                        depth_bids[watcher.exchange_name] = watcher.bid_levels[depth]
 
             # Find opportunities in this depth
             opportunities = find_opportunities(market, depth, depth_asks, depth_bids)
@@ -158,8 +162,10 @@ async def run_core_live(exchanges: dict, watchers: List[Watcher], watchers_by_ma
 async def run_core_logged(exchanges: list, watchers: List[Watcher], watchers_by_market: Dict[str, Dict[str, Watcher]]):
     """Run the app with raw console logging."""
 
-    update_delay = 3.0
-    last_update = 0
+    log_update_delay = 3.0
+    redis_update_delay = 1.0
+    last_log_update = 0
+    last_redis_update = 0
 
     def log_opportunity(opportunity, market, depth, best):
         base, quote = market.split("/")
@@ -180,9 +186,23 @@ async def run_core_logged(exchanges: list, watchers: List[Watcher], watchers_by_
         await update_alerts(all_opportunities, ALERT_THRESHOLD, RETRIGGER_THRESHOLD)
 
         # Regularly log the best opportunities to the logging output
-        if time.time() - last_update > update_delay:
+        if recorder.is_enabled():
+            if time.time() - redis_update_delay > last_redis_update:
+                timestamp_ms = int(time.time() * 1000)
+                depths = [w.get_depth_record() for w in watchers]
+                if config.REDIS_BG_WRITES:
+                    # Run the redis db updates in a thread pool, so they won't block the main thread
+                    # Fire and forget Redis IO sensitive task to write records to the database
+                    # https://stackoverflow.com/a/37345564/315168
+                    asyncio.ensure_future(record_depths(timestamp_ms, depths))
+                else:
+                    await record_depths(timestamp_ms, depths)
+                last_redis_update = time.time()
 
-            logger.info("Opportunities %s", datetime.datetime.utcnow())
+        # Regularly log the best opportunities to the logging output
+        if time.time() - last_log_update > log_update_delay:
+
+            logger.info("Opportunities at %s, depth records written %d", datetime.datetime.utcnow(), recorder.redis_updates)
 
             # Log out the prices
             for market, market_watchers in watchers_by_market.items():
@@ -211,7 +231,7 @@ async def run_core_logged(exchanges: list, watchers: List[Watcher], watchers_by_
                             second_best = depth_opportunities[1]
                             log_opportunity("#2", market, depth, second_best)
 
-            last_update = time.time()
+            last_log_update = time.time()
 
 
 async def run_core(live=True, log_filename=None):
@@ -219,8 +239,15 @@ async def run_core(live=True, log_filename=None):
     global logger
     logger = setup_logging(log_filename=log_filename)
 
+    logger.info("Starting")
     logger.info("Logging to %s", log_filename)
-    logger.info("Starting, Telegram available: %s", telegram.is_enabled())
+    logger.info("Telegram available: %s", telegram.is_enabled())
+    logger.info("Redis available: %s", recorder.is_enabled())
+
+    if recorder.is_enabled():
+        # Test redis connection works
+        recorder.init_connection(config.REDIS_CONFIG)
+        recorder.test_connection()
 
     exchanges = await setup_exchanges()
 

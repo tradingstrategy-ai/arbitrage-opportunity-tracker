@@ -1,0 +1,14 @@
+version: '3'
+services:
+
+  # https://hub.docker.com/r/redislabs/redistimeseries
+  redistimeseries:
+    user: root
+    image: "redislabs/redistimeseries"
+    container_name: redistimeseries
+    command: "redis-server --loadmodule /usr/lib/redis/modules/redistimeseries.so --requirepass ${REDIS_PASSWORD} --appendonly yes"
+    ports:
+     - "127.0.0.1:6379:6379"
+    volumes:
+      # Set redis data directory one folder below se we don't run our deployment sync by accident
+      - $PWD/../data/redis:/data

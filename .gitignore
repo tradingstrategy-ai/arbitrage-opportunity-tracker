@@ -1,5 +1,5 @@
 .idea
 __pycache__
 
-secrets.env
+secrets*.env
 
